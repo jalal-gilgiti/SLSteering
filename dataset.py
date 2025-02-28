@@ -7,28 +7,33 @@ import sys, os
 from collections import deque
 from .database_util import formatFilter, formatJoin, TreeNode, filterDict2Hist
 from .database_util import *
+from torch.nn.utils.rnn import pad_sequence
 
 class PlanTreeDataset(Dataset):
-    def __init__(self, json_df: pd.DataFrame, train: pd.DataFrame, encoding, hist_file, card_norm, cost_norm, to_predict, table_sample):
+    def __init__(self, json_df: pd.DataFrame, train: pd.DataFrame, encoding, hist_file, card_norm, cost_norm, knob_norm, to_predict, table_sample):
         self.table_sample = table_sample
         self.encoding = encoding
         self.hist_file = hist_file
         self.length = len(json_df)
 
         # Parse the query plans
-        nodes = [plan['Plan'] for plan in json_df['json']]
+        nodes = [json.loads(plan)['Plan'] if isinstance(plan, str) else plan['Plan'] for plan in json_df['json']]
+
         self.cards = [node.get('Actual Rows', 0) for node in nodes]
-        self.costs = [plan.get('Execution Time', 0) for plan in json_df['json']]
+        self.costs = [json.loads(plan).get('Execution Time', 0) if isinstance(plan, str) else plan.get('Execution Time', 0) for plan in json_df['json']]
         self.knob_settings = [self.extract_knob_setting(node) for node in nodes]
-        
+
+        # ✅ Convert knob settings to padded tensors
         knob_tensors = [torch.tensor(k, dtype=torch.float32) for k in self.knob_settings]
-        self.knob_labels = torch.nn.utils.rnn.pad_sequence(knob_tensors, batch_first=True, padding_value=0)
-        # Normalize labels (cost and knobs)
-        # self.knob_labels=torch.from_numpy(.normalize_labels(self.knob_settings))
+        padded_knobs = pad_sequence(knob_tensors, batch_first=True, padding_value=0).numpy()
+
+        # ✅ Normalize labels (cost, card, knobs)
         self.card_labels = torch.from_numpy(card_norm.normalize_labels(self.cards))
         self.cost_labels = torch.from_numpy(cost_norm.normalize_labels(self.costs))
-       
-        print(f'total execution time is : {self.costs}')
+        self.knob_labels = torch.from_numpy(knob_norm.normalize_labels(padded_knobs))  # ✅ Now normalizing correctly!
+
+        print(f'Total execution time is : {self.costs}')
+
         # Set target variable
         self.to_predict = to_predict
         if to_predict == 'cost':
@@ -37,49 +42,35 @@ class PlanTreeDataset(Dataset):
         elif to_predict == 'knobs':
             self.gts = self.knob_settings
             self.labels = self.knob_labels
+        elif to_predict == 'card':
+            self.gts = self.cards
+            self.labels = self.card_labels
         elif to_predict == 'both':
-            self.gts = {'cost': self.costs, 'knobs': self.knob_settings}
-            self.labels = {'cost': self.cost_labels, 'knobs': self.knob_labels}
+            self.gts = {'card': self.cards, 'cost': self.costs, 'knobs': self.knob_settings}
+            self.labels = {'card': self.card_labels, 'cost': self.cost_labels, 'knobs': self.knob_labels}
         else:
             raise Exception('Unknown to_predict type')
-       
+
         idxs = list(json_df['id'])
         self.treeNodes = []
         self.collated_dicts = [self.js_node2dict(i, node) for i, node in zip(idxs, nodes)]
 
-
     def extract_knob_setting(self, plan):
-        """
-        Extracts knob settings (e.g., 'Seq Scan', 'Hash Join') from the execution plan and sub-plans.
-        """
         knobs = []
-
-        # Collect node types
         if 'Node Type' in plan:
             knobs.append(plan['Node Type'])
-
-        # Recursively collect from subplans
+        if 'Join Type' in plan:
+            knobs.append(plan['Join Type'])
         if 'Plans' in plan:
             for subplan in plan['Plans']:
                 knobs.extend(self.extract_knob_setting(subplan))
-
-        # Ensure encoding supports lists
         encoded_knobs = [self.encoding.encode_type(node) for node in knobs]
-
-        # Pad sequences to a fixed length
-        max_length = 10  # Adjust based on dataset analysis
+        max_length = 15  # Adjusted to handle longer plans
         padded_knobs = encoded_knobs + [0] * (max_length - len(encoded_knobs))
+        return padded_knobs
 
-        return padded_knobs  # Now returns a fixed-length encoded list
 
     
-    
-    # def extract_knob_setting(self, plan):
-    #     """
-    #     Extracts the knob settings (e.g., 'Seq Scan', 'Hash Join') from the plan.
-    #     """
-    #     node_type = plan['Node Type']
-    #     return self.encoding.encode_type(node_type)  # Encode knob settings as numerical values
 # ----------------------------------------------------------------
 #  Converts a query plan node to a 
 # dictionary of features and collates it into the final format.
@@ -148,7 +139,8 @@ class PlanTreeDataset(Dataset):
             'x': x,
             'attn_bias': attn_bias,
             'rel_pos': rel_pos,
-            'heights': heights
+            'heights': heights,
+            'adjacency_list': edge_index
         }
     
 # Converts a TreeNode object (a node in the query plan tree) into a dictionary of features.
@@ -262,3 +254,82 @@ def node2feature(node, encoding, hist_file, table_sample):
 
     return np.concatenate((type_join, filts, mask, hists, table, sample))
 
+
+
+
+
+
+
+
+
+
+# class PlanTreeDataset(Dataset):
+#     def __init__(self, json_df: pd.DataFrame, train: pd.DataFrame, encoding, hist_file, card_norm, cost_norm, knob_norm,  to_predict, table_sample):
+#         self.table_sample = table_sample
+#         self.encoding = encoding
+#         self.hist_file = hist_file
+#         self.length = len(json_df)
+
+#         # Parse the query plans
+#         # nodes = [plan['Plan'] for plan in json_df['json']]
+#         nodes = [json.loads(plan)['Plan'] if isinstance(plan, str) else plan['Plan'] for plan in json_df['json']]
+
+#         self.cards = [node.get('Actual Rows', 0) for node in nodes]
+#         self.costs = [json.loads(plan).get('Execution Time', 0) if isinstance(plan, str) else plan.get('Execution Time', 0) for plan in json_df['json']]
+#         self.knob_settings = [self.extract_knob_setting(node) for node in nodes]
+        
+#         # knob_tensors = [torch.tensor(k, dtype=torch.float32) for k in self.knob_settings]
+#         # self.knob_labels = torch.nn.utils.rnn.pad_sequence(knob_tensors, batch_first=True, padding_value=0)
+       
+#         # Ensure knob settings are converted to NumPy array properly
+#         knob_tensors = [torch.tensor(k, dtype=torch.float32) for k in self.knob_settings]
+
+# # Pad all knob settings to the same length
+#         self.knob_labels = pad_sequence(knob_tensors, batch_first=True, padding_value=0).numpy()
+# # Now normalize knobs
+  
+#         # # Normalize labels (cost and knobs)
+#         # self.knob_labels=torch.from_numpy(.normalize_labels(self.knob_settings))
+#         self.card_labels = torch.from_numpy(card_norm.normalize_labels(self.cards))
+#         self.cost_labels = torch.from_numpy(cost_norm.normalize_labels(self.costs))
+#         self.knob_labels = torch.from_numpy(knob_norm.normalize_labels(self.knob_settings))
+
+       
+#         print(f'total execution time is : {self.costs}')
+#         # Set target variable
+#         self.to_predict = to_predict
+#         if to_predict == 'cost':
+#             self.gts = self.costs
+#             self.labels = self.cost_labels
+#         elif to_predict == 'knobs':
+#             self.gts = self.knob_settings
+#             self.labels = self.knob_labels
+#         elif to_predict == 'card':
+#             self.gts = self.cards
+#             self.labels = self.card_labels
+#         elif to_predict == 'both':
+#             self.gts = {'card': self.cards, 'cost': self.costs, 'knobs': self.knob_settings}
+#             self.labels = {'card': self.card_labels, 'cost': self.cost_labels, 'knobs': self.knob_labels}
+#         else:
+#             raise Exception('Unknown to_predict type')
+       
+#         idxs = list(json_df['id'])
+#         self.treeNodes = []
+#         self.collated_dicts = [self.js_node2dict(i, node) for i, node in zip(idxs, nodes)]
+
+
+#     def extract_knob_setting(self, plan):
+#         knobs = []
+#         if 'Node Type' in plan:
+#             knobs.append(plan['Node Type'])
+#         if 'Join Type' in plan:
+#             knobs.append(plan['Join Type'])
+#         if 'Plans' in plan:
+#             for subplan in plan['Plans']:
+#                 knobs.extend(self.extract_knob_setting(subplan))
+#         encoded_knobs = [self.encoding.encode_type(node) for node in knobs]
+#         max_length = 15  # Adjusted to handle longer plans
+#         padded_knobs = encoded_knobs + [0] * (max_length - len(encoded_knobs))
+#         return padded_knobs
+
+    
