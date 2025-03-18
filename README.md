@@ -1,6 +1,8 @@
 **SL-Steer: Generalizable and Cost-Aware Query Optimization for SQL Workloads
 **
+
 **ABSTRACT**
+
 Query optimization is a critical challenge in database management
 systems (DBMSs), where execution efficiency is essential for han-
 dling complex workloads. Traditional optimizers, which rely on
