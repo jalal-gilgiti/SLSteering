@@ -1,5 +1,5 @@
-**SL-Steer: Generalizable and Cost-Aware Query Optimization for SQL Workloads
-**
+**SL-Steer: Generalizable and Cost-Aware Query Optimization for SQL Workloads**
+__________________________________________________________________________________
 
 **ABSTRACT**
 
