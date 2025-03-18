@@ -35,8 +35,8 @@ tion. Extensive evaluations demonstrate that SL-Steer achieves up
 to 3× faster query optimization, significantly reducing latency by 5%
 to 10% and improving accuracy. It outperforms heuristic-based ap-
 proaches, providing a scalable and adaptable solution across various
-
 database engines.
+
 **Query Plan Encoding:**
 SL-Steer is a query optimizer that utilizes the advanced query encoding scheme from the QueryFormer paper. We enhance the QueryFormer encoding scheme by adding explicit hint encoding and setting hints as the target.
 
