@@ -30,14 +30,16 @@ existing methods, SL-Steer directly predicts the optimal hint set
 and execution cost in a single step, eliminating the need for plan
 approximation and avoiding greedy searches and computationally
 expensive sorting mechanisms. The framework utilizes a hybrid
-Transformer-BiLSTM model OptiFusion (see subsection 3.3) with
+Transformer-BiLSTM model OptiFusion with
 multi-head attention to effectively extract the most relevant query
 plan features, ensuring both accuracy and efficiency in optimiza-
 tion. Extensive evaluations demonstrate that SL-Steer achieves up
-to 3× faster query optimization, significantly reducing latency by 5%
-to 10% and improving accuracy. It outperforms heuristic-based ap-
-proaches, providing a scalable and adaptable solution across various
-database engines.
+to 3× faster query optimization compared to AutoSteer [2], reducing
+latency by 5% to 10% over PostgreSQL and improving hint predic-
+tion accuracy to 98%. It outperforms heuristic-based approaches,
+offering a scalable and adaptable solution across various database
+engines, though its scalability to distributed systems warrants fur-
+ther exploration.
 
 **Query Plan Encoding:**
 SL-Steer is a query optimizer that utilizes the advanced query encoding scheme from the QueryFormer paper. We enhance the QueryFormer encoding scheme by adding explicit hint encoding and setting hints as the target.
